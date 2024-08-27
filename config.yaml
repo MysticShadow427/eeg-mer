@@ -1,0 +1,2 @@
+model:
+  architecture : conformer # transformer or wavenet
