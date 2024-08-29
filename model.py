@@ -177,8 +177,9 @@ class ClassificationHead_C(nn.Sequential):
             nn.Linear(256, 32),
             nn.ELU(),
             nn.Dropout(0.3),
-            nn.Linear(32, 4)
+            nn.Linear(32, n_classes)
         )
+        
 
     def forward(self, x):
         x = x.contiguous().view(x.size(0), -1)
@@ -485,4 +486,4 @@ class Net(nn.Module):
         concat_vector  = torch.cat([w1,w2,w3,w4,w5],1)
         classes        = nn.functional.log_softmax(self.classifier(concat_vector),dim=1)  
 
-        return classes
+        return concat_vector,classes
