@@ -3,3 +3,5 @@ model:
   embed_size : 40 # according to it we need to modify input channels of the pooling layer
   n_classes : 2
   depth : 8
+
+task : 1 # or 2 then we also need to change the things accordingly

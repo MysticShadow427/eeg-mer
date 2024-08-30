@@ -30,11 +30,6 @@ from PIL import Image
 import torchvision.transforms as transforms
 from sklearn.decomposition import PCA
 
-import torch
-import torch.nn.functional as F
-import matplotlib.pyplot as plt
-
-from torch import nn
 from torch import Tensor
 from PIL import Image
 from torchvision.transforms import Compose, Resize, ToTensor
