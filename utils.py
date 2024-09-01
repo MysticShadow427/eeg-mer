@@ -1,5 +1,9 @@
 import torchaudio.transforms as T
 import torchaudio.functional as F
+import os
+import mne
+import numpy as np
+import pandas as pd
 
 def augment_waveform(waveform, sample_rate):
     # frequency masking
@@ -19,3 +23,46 @@ def augment_waveform(waveform, sample_rate):
 
     return augmented_waveform
 
+def generate_arousal_targets(eeg_dir, output_csv):
+    def extract_arousal_score(eeg_file):
+        raw = mne.io.read_raw_fif(eeg_file, preload=True)
+        
+        raw.filter(1., 40., fir_design='firwin')
+        
+        bands = {'alpha': (8, 13), 'beta': (13, 30)}
+        
+        psd, freqs = mne.time_frequency.psd_welch(raw, fmin=1, fmax=40, n_fft=2048)
+        
+        # extract band specific power
+        band_power = {}
+        for band, (low, high) in bands.items():
+            band_idx = (freqs >= low) & (freqs <= high)
+            band_power[band] = psd[:, band_idx].mean(axis=1)
+        
+        total_power = psd.sum(axis=1)
+        relative_power = {band: power / total_power for band, power in band_power.items()}
+        
+        arousal_score = relative_power['beta'] - relative_power['alpha']
+        
+        mean_arousal_score = np.mean(arousal_score)
+        
+        return mean_arousal_score
+    
+    results = []
+
+    for eeg_file in os.listdir(eeg_directory):
+        if eeg_file.endswith('.fif'): 
+            full_path = os.path.join(eeg_directory, eeg_file)
+            
+            arousal_score = extract_arousal_score(full_path)
+           
+            results.append({
+                'filename': eeg_file,
+                'arousal_score': arousal_score
+            })
+
+    df = pd.DataFrame(results)
+
+    df.to_csv(output_csv, index=False)
+
+    print(f"Arousal scores saved to {output_csv}")
