@@ -2,6 +2,7 @@
 from __future__ import print_function
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 class ClassificationLoss(nn.Module):
     def __init__(self):
@@ -10,6 +11,39 @@ class ClassificationLoss(nn.Module):
 
     def forward(self, logits, labels):
         return self.loss_fct(logits, labels)
+
+class RegressionLoss(nn.Module): # for arousal feature predictions, commitment loss (z_e.detach(), z_q) and codebook loss (z_e, z_q.detach())
+    def __init__(self):
+        super(RegressionLoss, self).__init__()
+        self.loss_fct = nn.MSELoss()
+
+    def forward(self, preds, targets):
+        return self.loss_fct(preds, targets)
+
+class person_specific_loss(nn.Module):
+    def __init__(self,person_count,activation_counters, num_embeddings):
+        self.person_count = person_count
+        self.activation_counters = activation_counters
+        self.num_embeddings = num_embeddings
+        
+    def forward(self):
+        person_specific_loss = 0.0
+        for p in range(self.person_count):
+            person_activation = self.activation_counters[:, p]
+            desired_activation = torch.ones_like(person_activation) / self.num_embeddings  # Equal distribution desired
+            person_specific_loss += F.mse_loss(person_activation, desired_activation)
+        
+        # Overlap Loss (penalty for overlap of codebook usage)
+        overlap_loss = torch.sum(self.activation_counters * (self.activation_counters > 1).float())
+
+        # Utilization Loss (regularization to ensure codebook usage)
+        utilization_loss = torch.sum(torch.var(self.activation_counters, dim=1))
+
+        # Ambiguity Loss (penalty for ambiguous assignments)
+        ambiguity_loss = torch.sum(torch.var(self.activation_counters, dim=0))
+
+        return person_specific_loss,overlap_loss,utilization_loss,ambiguity_loss
+
 
 
 # https://github.com/HobbitLong/SupContrast/blob/master/losses.py
@@ -93,13 +127,6 @@ class SupConLoss(nn.Module):
         exp_logits = torch.exp(logits) * logits_mask
         log_prob = logits - torch.log(exp_logits.sum(1, keepdim=True))
 
-        # compute mean of log-likelihood over positive
-        # modified to handle edge cases when there is no positive pair
-        # for an anchor point. 
-        # Edge case e.g.:- 
-        # features of shape: [4,1,...]
-        # labels:            [0,1,1,2]
-        # loss before mean:  [nan, ..., ..., nan] 
         mask_pos_pairs = mask.sum(1)
         mask_pos_pairs = torch.where(mask_pos_pairs < 1e-6, 1, mask_pos_pairs)
         mean_log_prob_pos = (mask * log_prob).sum(1) / mask_pos_pairs
@@ -109,3 +136,4 @@ class SupConLoss(nn.Module):
         loss = loss.view(anchor_count, batch_size).mean()
 
         return loss
+

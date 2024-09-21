@@ -66,3 +66,4 @@ def generate_arousal_targets(eeg_dir, output_csv):
     df.to_csv(output_csv, index=False)
 
     print(f"Arousal scores saved to {output_csv}")
+

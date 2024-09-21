@@ -42,6 +42,48 @@ from torch.backends import cudnn
 cudnn.benchmark = False
 cudnn.deterministic = True
 
+class EEGModel(nn.Module):
+    def __init__(self, model,cfg, vqvae_cfg):
+        self.type = model
+        self.cfg = cfg 
+        self.model = None
+        if self.type == 'conformer':
+            self.model = Conformer(**self.cfg)
+        else:
+            self.model = ViT(self.cfg)
+        
+        self.vqvae = VQVAE(vqvae_cfg) # code book for person identification
+    
+    def forward(self,x, person_id):
+        x, class_logits, person_logits = self.model(x)
+        x_e, x_q = self.vqvae(x, person_id)
+
+        return class_logits, person_logits, x_e, x_q
+
+
+class VQVAE(nn.Module):
+    def __init__(self,num_embeddings, embedding_dim, commitment_cost, person_count):
+        self.embedding_dim = embedding_dim
+        self.num_embeddings = num_embeddings
+        self.embedding = nn.Embedding(num_embeddings, embedding_dim)
+        self.embedding.weight.data.uniform_(-1/self.num_embeddings, 1/self.num_embeddings)
+        self.commitment_cost = commitment_cost
+        self.person_count = person_count
+        self.activation_counters = torch.zeros(num_embeddings, person_count)
+    
+    def forward(self, z_e, person_id): # z_e is the encoder embedding representation
+        z_e = z_e.view(-1, self.embedding_dim)
+        # Calculate distances
+        distances = torch.cdist(z_e, self.embedding.weight)  # Euclidean distance
+        encoding_indices = torch.argmin(distances, dim=1).unsqueeze(1)
+        z_q = self.embedding(encoding_indices).squeeze(1)
+        # Reconstruction
+        z_q = z_q.view(z_e.size(0), -1)
+        # Person-Specific Code Assignment Losses
+        self.activation_counters[encoding_indices.squeeze(1), person_id] += 1  # Track activations
+
+        return z_e, z_q
+
 # EEGConformer : https://github.com/eeyhsong/EEG-Conformer/blob/main/conformer.py
 
 # Convolution module
@@ -156,7 +198,7 @@ class TransformerEncoder_C(nn.Sequential):
 
 
 class ClassificationHead_C(nn.Sequential):
-    def __init__(self, emb_size, n_classes):
+    def __init__(self, emb_size, n_classes, n_persons):
         super().__init__()
         
         # global average pooling
@@ -164,6 +206,15 @@ class ClassificationHead_C(nn.Sequential):
             Reduce('b n e -> b e', reduction='mean'),
             nn.LayerNorm(emb_size),
             nn.Linear(emb_size, n_classes)
+        )
+        self.person_identification_head = nn.Sequential(
+            nn.Linear(2440, 256),
+            nn.ELU(),
+            nn.Dropout(0.5),
+            nn.Linear(256, 32),
+            nn.ELU(),
+            nn.Dropout(0.3),
+            nn.Linear(32, n_persons)
         )
         self.fc = nn.Sequential(
             nn.Linear(2440, 256),
@@ -179,16 +230,17 @@ class ClassificationHead_C(nn.Sequential):
     def forward(self, x):
         x = x.contiguous().view(x.size(0), -1)
         out = self.fc(x)
-        return x, out
+        p_logits = self.person_identification_head(x)
+        return x, out, p_logits
 
 
 class Conformer(nn.Sequential):
-    def __init__(self, emb_size=40, depth=6, n_classes=4, **kwargs):
+    def __init__(self, n_persons,emb_size=40, depth=6, n_classes=4, **kwargs):
         super().__init__(
 
             PatchEmbedding_C(emb_size),
             TransformerEncoder_C(depth, emb_size),
-            ClassificationHead_C(emb_size, n_classes)
+            ClassificationHead_C(emb_size, n_classes, n_persons)
         )
 
 ## EEGTransformer : https://github.com/eeyhsong/EEG-Transformer/blob/main/Trans.py
