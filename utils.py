@@ -5,6 +5,9 @@ import mne
 import numpy as np
 import pandas as pd
 
+def print_blue(text):
+    print(f"\033[94m{text}\033[0m")
+
 def augment_waveform(waveform, sample_rate):
     # frequency masking
     frequency_masking = T.FrequencyMasking(freq_mask_param=30)
@@ -50,9 +53,9 @@ def generate_arousal_targets(eeg_dir, output_csv):
     
     results = []
 
-    for eeg_file in os.listdir(eeg_directory):
+    for eeg_file in os.listdir(eeg_dir):
         if eeg_file.endswith('.fif'): 
-            full_path = os.path.join(eeg_directory, eeg_file)
+            full_path = os.path.join(eeg_dir, eeg_file)
             
             arousal_score = extract_arousal_score(full_path)
            

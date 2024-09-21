@@ -21,26 +21,24 @@ class RegressionLoss(nn.Module): # for arousal feature predictions, commitment l
         return self.loss_fct(preds, targets)
 
 class person_specific_loss(nn.Module):
-    def __init__(self,person_count,activation_counters, num_embeddings):
-        self.person_count = person_count
-        self.activation_counters = activation_counters
-        self.num_embeddings = num_embeddings
+    def __init__(self):
+        self.mse_loss = RegressionLoss()
         
-    def forward(self):
+    def forward(self,person_count,activation_counters, num_embeddings):
         person_specific_loss = 0.0
-        for p in range(self.person_count):
-            person_activation = self.activation_counters[:, p]
-            desired_activation = torch.ones_like(person_activation) / self.num_embeddings  # Equal distribution desired
-            person_specific_loss += F.mse_loss(person_activation, desired_activation)
+        for p in range(person_count):
+            person_activation = activation_counters[:, p]
+            desired_activation = torch.ones_like(person_activation) / num_embeddings  # Equal distribution desired
+            person_specific_loss += self.mse_loss(person_activation, desired_activation)
         
         # Overlap Loss (penalty for overlap of codebook usage)
-        overlap_loss = torch.sum(self.activation_counters * (self.activation_counters > 1).float())
+        overlap_loss = torch.sum(self.activation_counters * (activation_counters > 1).float())
 
         # Utilization Loss (regularization to ensure codebook usage)
-        utilization_loss = torch.sum(torch.var(self.activation_counters, dim=1))
+        utilization_loss = torch.sum(torch.var(activation_counters, dim=1))
 
         # Ambiguity Loss (penalty for ambiguous assignments)
-        ambiguity_loss = torch.sum(torch.var(self.activation_counters, dim=0))
+        ambiguity_loss = torch.sum(torch.var(activation_counters, dim=0))
 
         return person_specific_loss,overlap_loss,utilization_loss,ambiguity_loss
 
